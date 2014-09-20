@@ -1,15 +1,16 @@
 #!/usr/bin/env python
 # -*- coding: utf-8 -*-
 
-import os
+import os,sys
 import web
-#import Graphic
+import Image,ImageDraw
+from cStringIO import StringIO
 from setting import *
-import Image
 
 urls = (
-    '/(.*)/', 'redirect /',
-    '/image/resize', 'Graphic'
+    '/(.*)/', 'redirect /$1',
+    '/notfound','notfoundCrl',
+    '/graphic/(\w+)', 'serverCrl'
 )
 
 app = web.application(urls, globals())
@@ -33,7 +34,7 @@ def internalerror():
 
 def handle_validate(func):
     def Function(*args):
-        #todo 验证请求合法性
+        #todo 验证请求
 
         return func(*args)
     return Function
@@ -41,64 +42,136 @@ def handle_validate(func):
 app.add_processor(web.loadhook(app_processor_start))
 app.add_processor(web.unloadhook(app_processor_end))
 
+
 class Graphic:
-    @handle_validate
-    def GET(self):
-        #web.header('Content-Type', 'text/html; charset=UTF-8')
-        req = web.input(filename=None,w=0,h=0)
-        
-        size = int(req.w), int(req.h)
 
-        dirname = os.path.dirname(req.filename)
-        filename = os.path.basename(req.filename)
+    _stream = None
+    _org = None
+    _format = None
+    _org_w = 0
+    _org_h = 0
+    _quality = 60
 
-        original_file = "%s/%s" % (
-            UPLOAD_PATH,
-            req.filename
-        )
 
+    def __init__(self,original_file):
         if not os.path.isfile(original_file):
-            raise web.seeother('/')
+            raise "no original_file found"
+        
+        self._org = Image.open(original_file)
+        self._org_w,self._org_h = self._org.size
 
-        #thumbing start
-        target_file = "%s/%s/%s_%s_%s%s" % (
-            UPLOAD_PATH,
-            dirname,
-            os.path.splitext(filename)[0],
-            size[0],
-            size[1],
-            os.path.splitext(filename)[1]
-        )
-
-        if not os.path.isfile(target_file):
-            try:
-                old_img = Image.open(original_file)
-                old_w,old_h=old_img.size
-
-                if old_img.mode !='RGBA':
-                    img_format='JPEG'
-                else:
-                    img_format='PNG'        
-
-                if size[1] is 0:
-                    imgswap=old_img.resize((size[0],(old_h*size[0])/old_w),Image.ANTIALIAS)
-                else:
-                    imgswap=old_img.resize(size,Image.ANTIALIAS)
-
-                imgswap.save(target_file,img_format,quality=60)
-
-
-                stream = open(target_file)
-
-            except IOError:
-                print "cannot create thumbnail for", target_file
+        if self._org.mode !='RGBA':
+            self._format='JPEG'
         else:
-            stream = open(target_file)
+            self._format='PNG'
+
+        self._stream = StringIO()
+
+    def resize(self,size):
+        if size[1] is 0:
+            tmp=self._org.resize((size[0],(self._org_h*size[0])/self._org_w),Image.ANTIALIAS)
+        elif size[0] is 0:
+            tmp=self._org.resize(((self._org_w * size[1])/self._org_h,size[1]),Image.ANTIALIAS)     
+        else:
+            tmp=self._org.resize(size,Image.ANTIALIAS)
+        
+        tmp.save(self._stream,self._format,quality=self._quality)
+
+    def cut(self):
+        pass
+
+
+    def mark(self):
+        pass
+
+    def getDate(self):
+        return self._stream.getvalue()
+
+#造一张默认图片
+def notfoundImage(w,h):
+    if w is 0 or h is 0:
+        w = h = 200
+    elif w is 0:
+        w = h
+    elif h is 0:
+        h = w
+
+    output = StringIO()
+
+    img = Image.new('RGBA', (w,h), (240,240,240,0))
+    img.save(output,'JPEG')
+    return output.getvalue()
+
+def mkTargetFile(action,filename,size):
+    global filename_template
+    dirname = os.path.dirname(filename)
+    filename = os.path.basename(filename)
+
+    name,ext = os.path.splitext(filename)
+
+    if size[0] is 0:
+        tpl = filename_template.get(action+"_h")
+    elif size[1] is 0:
+        tpl = filename_template.get(action+"_w")
+    else:
+        tpl = filename_template.get(action+"_wh")
+
+    return ''.join([UPLOAD_PATH,dirname,'/',tpl.format(name=name, width=size[0],height=size[1],ext=ext)])
+
+class notfoundCrl:
+    def GET(self):
+        req = web.input(w=0,h=0)
+
+        output = notfoundImage(int(req.w), int(req.h))
 
         web.header('Content-Type', 'image/jpeg; charset=UTF-8')
-        res = stream.read()
-        stream.close()
-        return res
+        return output
+
+class serverCrl:
+    @handle_validate
+    def GET(self,action):
+
+        #web.header('Content-Type', 'text/html; charset=UTF-8')
+        req = web.input(filename=None,w=0,h=0)
+
+        size = int(req.w), int(req.h)
+
+        target_file = mkTargetFile(action,req.filename,size)
+
+        if os.path.isfile(target_file):
+            fs = open(target_file)
+            stream = fs.read()
+        else:
+
+            original_file = "%s/%s" % (
+                UPLOAD_PATH,
+                req.filename
+            )
+
+            stream = None
+            try:
+                gc = Graphic(original_file)
+                
+                if action == "resize":
+                    gc.resize(size)
+                elif action is "cut":
+                    gc.cut()
+
+                stream = gc.getDate()
+
+                if LOCALSTORAGE:
+                    fs = open(target_file, 'wb')
+                    fs.write(stream)
+                    fs.close()
+
+            except IOError:
+                #todo logger
+                #request_uri = web.ctx.env.get('REQUEST_URI', '/')
+                stream = notfoundImage(size[0],size[1])
+
+        web.header('Content-Type', 'image/jpeg; charset=UTF-8')
+        return stream
+
 
 if __name__ == "__main__":
     web.config.debug = True if DEBUG else False
