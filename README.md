@@ -142,13 +142,45 @@ server{
     proxy_set_header X-Real-IP  $remote_addr;
     proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
 
-    location / {
-    	#指定宽高生成缩略图规则
-        if ($request_uri ~* "^/([^\.]+\.[jpg|png]+)-([0-9]+),([0-9]+)$"){
-                rewrite "^/([^\.]+\.[jpg|png]+)-([0-9]+),([0-9]+)$" /image/resize?filename=$1&w=$2&h=$3 break;
-                proxy_pass http://backend_serv;
-        }
-    }
+
+   location ~ /([^\.]+)(\.[jpg|png]+)-.*$ {
+       set $target_file '';
+       if ( $request_uri ~ /([^\.]+)(\.[jpg|png]+)-(\d+),(\d+)$ ){
+          set $filename $1;
+          set $ext $2;
+          set $w $3;
+          set $h $4;
+          set $target_file "/${filename}_${w}_${h}${ext}";
+       }
+       
+       if ( $request_uri ~ /([^\.]+)(\.[jpg|png]+)-w(\d+)$ ){
+          set $filename $1;
+          set $ext $2;
+          set $w $3;
+          set $h 0;
+          set $target_file "/${filename}_w${w}${ext}";
+       }
+       
+       if ( $request_uri ~ /([^\.]+)(\.[jpg|png]+)-h(\d+)$ ){
+          set $filename $1;
+          set $ext $2;
+          set $w 0;
+          set $h $3;
+          set $target_file "/${filename}_h${h}${ext}";
+      }
+      
+      if ( $target_file = ''){
+          return 404;
+      }
+      
+      if ( -f $document_root$target_file ){
+          expires      1h;
+          rewrite ^(.*)$ $target_file last;
+      }
+
+      rewrite ^(.*)$ /graphic/resize?filename=${filename}${ext}&w=${w}&h=${h} break;
+      proxy_pass http://backend_serv;      
+  }
 }
 ```
 
