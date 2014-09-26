@@ -3,9 +3,15 @@
 
 import os,sys
 import web
+import traceback
+import logging
+import logging.handlers
 import Image,ImageDraw
 from cStringIO import StringIO
 from setting import *
+
+LOG_FORMAT = '[%(asctime)s] %(funcName)s(%(filename)s:%(lineno)s) [%(levelname)s]:%(message)s'
+log = logging.getLogger()
 
 urls = (
     '/(.*)/', 'redirect /$1',
@@ -164,8 +170,13 @@ class serverCrl:
                     fs.write(stream)
                     fs.close()
 
-            except IOError:
-                #todo logger
+            except IOError as e:
+                log.error(str(e))
+                stream = notfoundImage(size[0],size[1])
+            except:
+                excinfo = traceback.format_exc()
+                log.error(excinfo)
+
                 #request_uri = web.ctx.env.get('REQUEST_URI', '/')
                 stream = notfoundImage(size[0],size[1])
 
@@ -174,6 +185,9 @@ class serverCrl:
 
 
 if __name__ == "__main__":
+
+    create_log(LOG_FILE,LOG_LEVEL)
+
     web.config.debug = True if DEBUG else False
     app.notfound = notfound
     app.internalerror = web.debugerror if DEBUG else internalerror

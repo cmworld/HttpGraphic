@@ -3,6 +3,10 @@
 import os
 
 DEBUG = True
+
+LOG_FILE = './error.log'
+LOG_LEVEL = 10
+
 UPLOAD_PATH = '图片存储绝对路径'
 ROOT_PATH = os.path.abspath(os.path.dirname(__file__))
 
