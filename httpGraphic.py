@@ -79,7 +79,14 @@ class Graphic:
         elif size[0] is 0:
             tmp=self._org.resize(((self._org_w * size[1])/self._org_h,size[1]),Image.ANTIALIAS)     
         else:
-            tmp=self._org.resize(size,Image.ANTIALIAS)
+            f1 = 1.0 * size[0] / self._org_w
+            f2 = 1.0 * size[1] / self._org_h
+            factor = min([f1, f2])
+  
+            width = int(self._org_w * factor)
+            height = int(self._org_h * factor)
+
+            tmp=self._org.resize((width, height),Image.ANTIALIAS)
         
         tmp.save(self._stream,self._format,quality=self._quality)
 
